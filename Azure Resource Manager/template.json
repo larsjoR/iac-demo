@@ -1,0 +1,288 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": {
+      "type": "string",
+      "allowedValues": [
+        "dev",
+        "qa",
+        "prod",
+        "test",
+        "stg"
+      ],
+      "defaultValue": "dev",
+      "metadata": {
+        "description": ""
+      }
+    },
+    "appConfig": {
+      "type": "string",
+      "metadata": {
+        "description": "The JSON application configuration value"
+      }
+    },
+    "siteName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of azure web app"
+      }
+    },
+    "siteNameShort": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of azure web app (shortened)"
+      }
+    },
+    "serverfarmsSkuTier": {
+      "type": "string",
+      "allowedValues": [
+        "Basic",
+        "Standard"
+      ],
+      "defaultValue": "Basic"
+    },
+    "serverfarmsSkuName": {
+      "type": "string",
+      "allowedValues": [
+        "F1",
+        "D1",
+        "B1",
+        "B2",
+        "B3",
+        "S1",
+        "S2",
+        "S3",
+        "P1",
+        "P2",
+        "P3",
+        "P4"
+      ],
+      "defaultValue": "B1"
+    },
+    "keyVaultConfigSecretName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name application configuration keyvault secret name"
+      }
+    }
+  },
+  "variables": {
+    "keyVaultName": "[concat('demo-',parameters('environment'),'-', parameters('siteNameShort'), '-kv')]",
+    "appSiteName": "[concat('demo-',parameters('environment'),'-tst-', parameters('siteName'), '-wa')]",
+    "hostingPlanName": "[concat('demo-',parameters('environment'),'-tst-', parameters('siteName'), '-sp')]",
+    "appInsightsName": "[concat('demo-',parameters('environment'),'-', parameters('siteName'), '-ai')]",
+    "identityResourceId": "[concat(resourceId('Microsoft.Web/sites', variables('appSiteName')),'/providers/Microsoft.ManagedIdentity/Identities/default')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2016-09-01",
+      "name": "[variables('hostingPlanName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "name": "[variables('hostingPlanName')]",
+        "workerSizeId": "1",
+        "reserved": false,
+        "numberOfWorkers": "1",
+        "hostingEnvironment": ""
+      },
+      "sku": {
+        "tier": "[parameters('serverfarmsSkuTier')]",
+        "name": "[parameters('serverfarmsSkuName')]"
+      },
+      "kind": "app",
+      "tags": {
+        "displayName": "HostingPlan",
+        "createdBy": "Me"
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2016-08-01",
+      "name": "[variables('appSiteName')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]",
+        "[concat('Microsoft.Web/serverfarms/', variables('hostingPlanName'))]"
+      ],
+      "tags": {
+        "displayName": "HostingPlan",
+        "createdBy": "Me"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "name": "[variables('appSiteName')]",
+        "serverFarmId": "[variables('hostingPlanName')]",
+        "clientAffinityEnabled": true,
+        "hostingEnvironment": "",
+        "enabled": true,
+        "reserved": false,
+        "httpsOnly": true,
+        "clientCertEnabled": false,
+        "siteConfig": {
+          "phpVersion": "7.2",
+          "nodeVersion": "10.6.0",
+          "requestTracingEnabled": true,
+          "httpLoggingEnabled": true,
+          "logsDirectorySizeLimit": 100,
+          "detailedErrorLoggingEnabled": true,
+          "use32BitWorkerProcess": false,
+          "alwaysOn": true,
+          "http20Enabled": true,
+          "appSettings": [
+            {
+              "name": "SCM_ZIPDEPLOY_DONOT_PRESERVE_FILETIME",
+              "value": "1"
+            },
+            {
+              "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+              "value": "[reference(resourceId('Microsoft.Insights/components/', variables('appInsightsName')), '2015-05-01').InstrumentationKey]"
+            },
+            {
+              "name": "WEBSITE_LOAD_CERTIFICATES",
+              "value": "*"
+            },
+            {
+              "name": "KeyVaultConfigUrl",
+              "value": "[concat('https://', variables('keyVaultName'), '.vault.azure.net', '/secrets/', parameters('keyVaultConfigSecretName'))]"
+            },
+            {
+              "name": "UseKeyVault",
+              "value": "true"
+            },
+            {
+              "name": "Logging:LogLevel:Default",
+              "value": "Warning"
+            }
+          ],
+          "connectionStrings": []
+        }
+      },
+      "resources": [
+        {
+          "name": "logs",
+          "type": "config",
+          "apiVersion": "2016-08-01",
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/sites', variables('appSiteName'))]"
+          ],
+          "properties": {
+            "applicationLogs": {
+              "fileSystem": {
+                "level": "Warning"
+              },
+              "azureBlobStorage": {
+                "level": "Verbose",
+                "sasUrl": null,
+                "retentionInDays": null,
+                "enabled": false
+              }
+            },
+            "httpLogs": {
+              "fileSystem": {
+                "retentionInMb": 100,
+                "retentionInDays": 60,
+                "enabled": true
+              },
+              "azureBlobStorage": {
+                "sasUrl": null,
+                "retentionInDays": null,
+                "enabled": false
+              }
+            },
+            "failedRequestsTracing": {
+              "enabled": true
+            },
+            "detailedErrorMessages": {
+              "enabled": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2015-05-01",
+      "name": "[variables('appInsightsName')]",
+      "location": "[resourceGroup().location]",
+      "kind": "web",
+      "tags": {
+        "displayName": "HostingPlan",
+        "createdBy": "Me"
+      },
+      "properties": {
+        "ApplicationId": "[variables('appSiteName')]",
+        "Application_Type": "web",
+        "Flow_Type": "Bluefield",
+        "Request_Source": "AppServiceEnablementCreate"
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "name": "[variables('keyVaultName')]",
+      "apiVersion": "2015-06-01",
+      "location": "[resourceGroup().location]",
+      "tags": {
+        "displayName": "HostingPlan",
+        "createdBy": "Me"
+      },
+      "properties": {
+        "sku": {
+          "family": "A",
+          "name": "Standard"
+        },
+        "tenantId": "[subscription().tenantId]",
+        "enabledForDeployment": true,
+        "enabledForTemplateDeployment": true,
+        "accessPolicies": [
+          {
+            "tenantId": "[reference(variables('identityResourceId'), '2015-08-31-PREVIEW').tenantId]",
+            "objectId": "[reference(variables('identityResourceId'), '2015-08-31-PREVIEW').principalId]",
+            "permissions": {
+              "secrets": [
+                "get",
+                "list"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "name": "[concat(variables('keyVaultName'), '/',parameters('keyVaultConfigSecretName'))]",
+      "apiVersion": "2015-06-01",
+      "tags": {
+        "displayName": "KeyVault Config"
+      },
+      "properties": {
+        "contentType": "application/json",
+        "value": "[parameters('appConfig')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "siteUri": {
+      "type": "string",
+      "value": "[reference(concat('Microsoft.Web/sites/', variables('appSiteName'))).hostnames[0]]"
+    },
+    "siteName": {
+      "type": "string",
+      "value": "[variables('appSiteName')]"
+    },
+    "webAppPrincipalId": {
+      "type": "string",
+      "value": "[reference(variables('identityResourceId'), '2015-08-31-PREVIEW').principalId]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "value": "[variables('keyVaultName')]"
+    }
+  }
+}

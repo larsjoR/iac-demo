@@ -1,0 +1,6 @@
+prefix            = "demo"
+location          = "westeurope"
+environment       = "dev"
+suffix            = "terra"
+resourceGroupName = "Demo-Terraform"
+clientSecret      = "abcz123"
